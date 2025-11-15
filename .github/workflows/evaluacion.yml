@@ -1,0 +1,97 @@
+name: Evaluación HTML y CSS
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read   # impedir modificación del workflow
+  actions: read
+
+jobs:
+  evaluar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Instalar dependencias
+        run: |
+          npm install -g htmlhint stylelint stylelint-config-standard pypandoc
+
+      # =======================
+      # 1. VALIDAR ESTRUCTURA
+      # =======================
+      - name: Validar estructura del proyecto
+        run: |
+          echo "Validando estructura del proyecto..."
+          test -f index.html || (echo "❌ Falta index.html" && exit 1)
+          test -d css || (echo "❌ Falta carpeta css/" && exit 1)
+          test -f css/styles.css || (echo "❌ Falta styles.css" && exit 1)
+          test -d img || (echo "❌ Falta carpeta img/" && exit 1)
+
+          # Prohibir .DS_Store
+          if find . -name ".DS_Store" | grep .; then
+            echo "❌ Archivo .DS_Store encontrado. Prohibido."
+            exit 1
+          fi
+
+          # styles.css >= 10 líneas
+          if [ "$(wc -l < css/styles.css)" -lt 10 ]; then
+            echo "❌ styles.css debe tener al menos 10 líneas."
+            exit 1
+          fi
+
+      # =======================
+      # 2. VALIDAR HTML
+      # =======================
+      - name: Validar HTML con HTMLHint
+        run: htmlhint index.html || exit 1
+
+      - name: Ejecutar tests HTML personalizados
+        run: node tests/verificar-html.js
+
+      # =======================
+      # 3. VALIDAR CSS
+      # =======================
+      - name: Validar CSS con Stylelint
+        run: stylelint "css/*.css" || exit 1
+
+      - name: Ejecutar tests CSS personalizados
+        run: node tests/verificar-css.js
+
+      # =======================
+      # 4. CALCULAR NOTA
+      # =======================
+      - name: Calcular nota final
+        run: node tests/calcular-nota.js
+
+      # =======================
+      # 5. INFORMES
+      # =======================
+      - name: Generar informe Markdown
+        run: |
+          node tests/calcular-nota.js --md > informe.md
+
+      - name: Generar informe PDF
+        run: |
+          pypandoc_convert () {
+            echo "$1" | pypandoc -f markdown -t pdf -o informe.pdf --standalone
+          }
+          cat informe.md | pypandoc -f markdown -t pdf -o informe.pdf --standalone
+
+      - name: Subir artefactos
+        uses: actions/upload-artifact@v3
+        with:
+          name: informes-evaluacion
+          path: |
+            informe.md
+            informe.pdf
